@@ -27,5 +27,5 @@ ID of the camera
 
 #### Example run command with params
 ```
-ros2 run camera_ros camera_node --ros-args -p width:=1920 -p height:=1080 -p format:= "UYVY"
+ros2 run camera_ros camera_node --ros-args -p width:=1920 -p height:=1080 -p format:="UYVY"
 ```
