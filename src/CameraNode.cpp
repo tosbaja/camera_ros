@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cv_bridge/cv_bridge.h>
+#include <opencv2/imgcodecs.hpp>
 #include <functional>
 #include <iostream>
 #include <libcamera/base/shared_fd.h>
@@ -108,6 +109,8 @@ private:
   // keep track of set parameters
   ParameterMap parameters_full;
   std::mutex parameters_lock;
+  // compression quality parameter
+  int64_t compression_quality;
 
   void
   declareParameters();
@@ -164,6 +167,16 @@ CameraNode::CameraNode(const rclcpp::NodeOptions &options) : Node("camera", opti
   // camera ID
   declare_parameter("camera", rclcpp::ParameterValue {}, param_descr_ro.set__dynamic_typing(true));
 
+  // jpeg compression quality
+  rcl_interfaces::msg::ParameterDescriptor param_descr_compression_role;
+  param_descr_compression_role.name = "jpeg_quality";
+  param_descr_compression_role.description = "quality of the jpeg compression, samller values lead to worst quality but lower bandwitdth";
+  param_descr_compression_role.additional_constraints = "integer value from 0 to 100";
+  param_descr_compression_role.type = rcl_interfaces::msg::ParameterType::PARAMETER_INTEGER;
+  param_descr_compression_role.read_only = false;
+  //defult to 95
+  declare_parameter<int64_t>("compression_quality", 95, param_descr_compression_role);
+  compression_quality =  get_parameter("compression_quality").as_int();
   // publisher for raw and compressed image
   pub_image = this->create_publisher<sensor_msgs::msg::Image>("~/image_raw", 1);
   pub_image_compressed =
@@ -523,7 +536,41 @@ CameraNode::requestComplete(libcamera::Request *request)
 
       // compress to jpeg
       if (pub_image_compressed->get_subscription_count())
-        cv_bridge::toCvCopy(*msg_img)->toCompressedImageMsg(*msg_img_compressed);
+      {
+        std::vector<int> params;
+        params.reserve(2);
+        params.emplace_back(cv::IMWRITE_JPEG_QUALITY);
+        params.emplace_back(compression_quality);
+
+        //only consider color jpeg compression
+        std::string targetFormat = "bgr8";
+        try
+        {
+          std::shared_ptr<CameraNode> tracked_object;
+          cv_bridge::CvImageConstPtr cv_ptr = cv_bridge::toCvShare(*msg_img,tracked_object, targetFormat);
+
+          // Compress image
+          if (cv::imencode(".jpg", cv_ptr->image, msg_img_compressed->data, params))
+          {
+
+            float cRatio = (float)(cv_ptr->image.rows * cv_ptr->image.cols * cv_ptr->image.elemSize())
+                / (float)msg_img_compressed->data.size();
+            RCLCPP_DEBUG(get_logger(), "Compressed Image Transport - Codec: jpg, Compression Ratio: 1:%.2f (%lu bytes)", cRatio, msg_img_compressed->data.size());
+          }
+          else
+          {
+            RCLCPP_ERROR(get_logger(), "cv::imencode (jpeg) failed on input image");
+          }
+        }
+        catch (cv_bridge::Exception& e)
+        {
+          RCLCPP_ERROR(get_logger(), "%s", e.what());
+        }
+        catch (cv::Exception& e)
+        {
+          RCLCPP_ERROR(get_logger(), "%s", e.what());
+        }
+      }
     }
     else if (format_type(cfg.pixelFormat) == FormatType::COMPRESSED) {
       // compressed image
