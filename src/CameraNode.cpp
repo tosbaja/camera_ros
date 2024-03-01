@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cv_bridge/cv_bridge.h>
+#include <opencv2/imgcodecs.hpp>
 #include <functional>
 #include <iostream>
 #include <libcamera/base/shared_fd.h>
@@ -114,6 +115,7 @@ private:
   // compression quality parameter
   std::atomic_uint8_t jpeg_quality;
 
+
   void
   declareParameters();
 
@@ -181,6 +183,7 @@ CameraNode::CameraNode(const rclcpp::NodeOptions &options) : Node("camera", opti
   jpeg_quality_description.integer_range = {jpeg_range};
   // default to 95
   jpeg_quality = declare_parameter<uint8_t>("jpeg_quality", 95, jpeg_quality_description);
+
   // publisher for raw and compressed image
   pub_image = this->create_publisher<sensor_msgs::msg::Image>("~/image_raw", 1);
   pub_image_compressed =
